@@ -1,7 +1,7 @@
 {
-  "name": "GamerFinder",
+  "name": "Gamer Finder",
   "version": "1.0.0",
-  "description": "Get started example for Messenger Platform",
+  "description": "Platform to find your gaming neighbourhoods",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
@@ -10,9 +10,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://gitlab.com/MohanRajK/GamerFinder.git"
+    "url": "https://github.com/MohanRajNK/GamerFinder.git"
   },
-  "author": "Facebook",
+  "author": "Ayelet team",
   "license": "ISC",
   "dependencies": {
     "body-parser": "^1.15.0",
