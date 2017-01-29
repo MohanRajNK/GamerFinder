@@ -10,19 +10,29 @@
 /* jshint node: true, devel: true */
 'use strict';
 
-const 
+const
   bodyParser = require('body-parser'),
   config = require('config'),
   crypto = require('crypto'),
   express = require('express'),
-  https = require('https'),  
-  request = require('request');
+  https = require('https'),
+  request = require('request'),
+  appservice = require('./services/app-service');
+
+var service = appservice.service;
+var passport = require('passport');
+var network = require('./services/network-service');
+var networkService = network.service;
 
 var app = express();
 app.set('port', process.env.PORT || 3000);
 app.set('view engine', 'ejs');
-app.use(bodyParser.json({ verify: verifyRequestSignature }));
+app.use(bodyParser.json({
+  verify: verifyRequestSignature
+}));
 app.use(express.static('public'));
+app.use(passport.initialize());
+app.use(passport.session());
 
 /*
  * Be sure to setup your config values before running this code. You can 
@@ -31,7 +41,7 @@ app.use(express.static('public'));
  */
 
 // App Secret can be retrieved from the App Dashboard
-const APP_SECRET = (process.env.MESSENGER_APP_SECRET) ? 
+const APP_SECRET = (process.env.MESSENGER_APP_SECRET) ?
   process.env.MESSENGER_APP_SECRET :
   config.get('appSecret');
 
@@ -63,13 +73,13 @@ if (!(APP_SECRET && VALIDATION_TOKEN && PAGE_ACCESS_TOKEN && SERVER_URL)) {
  */
 app.get('/webhook', function(req, res) {
   if (req.query['hub.mode'] === 'subscribe' &&
-      req.query['hub.verify_token'] === VALIDATION_TOKEN) {
+    req.query['hub.verify_token'] === VALIDATION_TOKEN) {
     console.log("Validating webhook");
     res.status(200).send(req.query['hub.challenge']);
   } else {
     console.error("Failed validation. Make sure the validation tokens match.");
-    res.sendStatus(403);          
-  }  
+    res.sendStatus(403);
+  }
 });
 
 
@@ -80,7 +90,7 @@ app.get('/webhook', function(req, res) {
  * https://developers.facebook.com/docs/messenger-platform/product-overview/setup#subscribe_app
  *
  */
-app.post('/webhook', function (req, res) {
+app.post('/webhook', function(req, res) {
   var data = req.body;
 
   // Make sure this is a page subscription
@@ -127,7 +137,9 @@ app.post('/webhook', function (req, res) {
 app.get('/authorize', function(req, res) {
   var accountLinkingToken = req.query.account_linking_token;
   var redirectURI = req.query.redirect_uri;
+  if (accountLinkingToken == "steam") {
 
+  }
   // Authorization Code should be generated per user by the developer. This will 
   // be passed to the Account Linking callback.
   var authCode = "1234567890";
@@ -142,6 +154,90 @@ app.get('/authorize', function(req, res) {
   });
 });
 
+
+app.get('/xboxAuthenticate', function(req, res) {
+  var service = req.query.service;
+  var accountLinkingToken = req.query.token;
+  var redirectUri = req.query.redirect_uri;
+  var authcode = req.query.code;
+
+});
+
+/*
+ * Login process
+ *
+ */
+app.get('/login', function(req, res) {
+  service.loginUser(req.query.service, req.query.account_linking_token, req.query.redirect_uri)(req, res);
+});
+
+
+/*
+ * 
+ */
+app.get('/loginreturn', function(req, res) {
+  var service = req.query.service;
+  var accountLinkingToken = req.query.token;
+  var redirectUri = req.query.redirect_uri;
+  var authcode = "";
+  if (service == "xbox" && typeof req.query.code != undefined) {
+    // service.getXboxToken(req.query.code, "000000004C1C1EEB", "XCappi8XSO6hmu9AubpFHhG", redirectUri, accountLinkingToken);
+
+    var msRedirectUri = 'https://botterboy-kmohanraj217229.codeanyapp.com/loginreturn?service=xbox&token=' + accountLinkingToken 
+    + '&redirect_uri=' + encodeURIComponent(redirectUri);
+    var queryString = "client_id=" + "000000004C1C1EEB" + "&grant_type=authorization_code&client_secret=" + "XCappi8XSO6hmu9AubpFHhG" + "&code=" + req.query.code +
+      "&redirect_uri=" + msRedirectUri;
+    console.log(msRedirectUri);
+    var responseJson = "";
+    
+    var request = require("request");
+    
+    request.post({
+      headers: {'content-type' : 'application/x-www-form-urlencoded'},
+      url: "https://login.live.com/oauth20_token.srf", 
+      body : queryString}, function(error, response, body) {
+      responseJson = response;
+      console.log(response + " " + body + "");
+    });   
+    
+    /*networkService.post("https://login.live.com/oauth20_token.srf", queryString, function(error, response, body) {
+      responseJson = response;
+      console.log(response + " " + body + "");
+    });*/
+
+
+  } else {
+    if (service == "steam") {
+      var format = "http://steamcommunity.com/openid/id/76561198286211818";
+      authcode = req.query["openid.claimed_id"];
+    } else if (service == "xbox") {
+      // console.log(req.query);
+      return;
+    }
+    if (authcode !== "") {
+      var redirectURISuccess = redirectUri + "&authorization_code=" + authcode;
+      //res.redirect("/loginresult?accountLinkingToken=" + req.query.account_linking_token + "&authorization_code=" + authcode)
+    }
+    res.render('authorize', {
+      accountLinkingToken: accountLinkingToken,
+      redirectURI: redirectUri,
+      redirectURISuccess: redirectURISuccess
+    })
+
+  }
+
+
+});
+
+/*app.get("/loginresult", function(req, res) {
+  
+        res.render('loginresult', {
+    accountLinkingToken: accountLinkingToken,
+    redirectURI: redirectURI,
+    redirectURISuccess: redirectURISuccess
+  });
+        });
+        */
 /*
  * Verify that the callback came from Facebook. Using the App Secret from 
  * the App Dashboard, we can verify the signature that is sent with each 
@@ -163,8 +259,8 @@ function verifyRequestSignature(req, res, buf) {
     var signatureHash = elements[1];
 
     var expectedHash = crypto.createHmac('sha1', APP_SECRET)
-                        .update(buf)
-                        .digest('hex');
+      .update(buf)
+      .digest('hex');
 
     if (signatureHash != expectedHash) {
       throw new Error("Couldn't validate the request signature.");
@@ -193,7 +289,7 @@ function receivedAuthentication(event) {
   var passThroughParam = event.optin.ref;
 
   console.log("Received authentication for user %d and page %d with pass " +
-    "through param '%s' at %d", senderID, recipientID, passThroughParam, 
+    "through param '%s' at %d", senderID, recipientID, passThroughParam,
     timeOfAuth);
 
   // When an authentication is received, we'll send a message back to the sender
@@ -220,8 +316,8 @@ function receivedMessage(event) {
   var recipientID = event.recipient.id;
   var timeOfMessage = event.timestamp;
   var message = event.message;
-console.log(event);
-  console.log("Received message for user %d and page %d at %d with message:", 
+  console.log(event);
+  console.log("Received message for user %d and page %d at %d with message:",
     senderID, recipientID, timeOfMessage);
   console.log(JSON.stringify(message));
 
@@ -237,7 +333,7 @@ console.log(event);
 
   if (isEcho) {
     // Just logging message echoes to console
-    console.log("Received echo for message %s and app %d with metadata %s", 
+    console.log("Received echo for message %s and app %d with metadata %s",
       messageId, appId, metadata);
     return;
   } else if (quickReply) {
@@ -255,6 +351,12 @@ console.log(event);
     // keywords and send back the corresponding example. Otherwise, just echo
     // the text we received.
     switch (messageText) {
+      case 'register':
+        sendLoginMessage(senderID, "steam");
+        break;
+      case 'register xbox':
+        sendLoginMessage(senderID, "xbox");
+        break;
       case 'image':
         sendImageMessage(senderID);
         break;
@@ -289,19 +391,19 @@ console.log(event);
 
       case 'quick reply':
         sendQuickReply(senderID);
-        break;        
+        break;
 
       case 'read receipt':
         sendReadReceipt(senderID);
-        break;        
+        break;
 
       case 'typing on':
         sendTypingOn(senderID);
-        break;        
+        break;
 
       case 'typing off':
         sendTypingOff(senderID);
-        break;        
+        break;
 
       case 'account linking':
         sendAccountLinking(senderID);
@@ -334,7 +436,7 @@ function receivedDeliveryConfirmation(event) {
 
   if (messageIDs) {
     messageIDs.forEach(function(messageID) {
-      console.log("Received delivery confirmation for message ID: %s", 
+      console.log("Received delivery confirmation for message ID: %s",
         messageID);
     });
   }
@@ -359,7 +461,7 @@ function receivedPostback(event) {
   // button for Structured Messages. 
   var payload = event.postback.payload;
 
-  console.log("Received postback for user %d and page %d with payload '%s' " + 
+  console.log("Received postback for user %d and page %d with payload '%s' " +
     "at %d", senderID, recipientID, payload, timeOfPostback);
 
   // When a postback is called, we'll send a message back to the sender to 
@@ -548,7 +650,7 @@ function sendButtonMessage(recipientId) {
         payload: {
           template_type: "button",
           text: "This is test text",
-          buttons:[{
+          buttons: [{
             type: "web_url",
             url: "https://www.oculus.com/en-us/rift/",
             title: "Open Web URL"
@@ -564,7 +666,43 @@ function sendButtonMessage(recipientId) {
         }
       }
     }
-  };  
+  };
+
+  callSendAPI(messageData);
+}
+
+/*
+ * Send a login message using the Send API.
+ *
+ */
+function sendLoginMessage(recipientId, service) {
+
+  var serviceText = "Steam Login";
+  var serviceUrl = "https://botterboy-kmohanraj217229.codeanyapp.com/login?service=steam"
+
+  if (service == "xbox") {
+    serviceText = "Xbox Login";
+    serviceUrl = "https://botterboy-kmohanraj217229.codeanyapp.com/login?service=xbox";
+  }
+
+  var messageData = {
+    recipient: {
+      id: recipientId
+    },
+    message: {
+      attachment: {
+        type: "template",
+        payload: {
+          template_type: "button",
+          text: serviceText,
+          buttons: [{
+            type: "account_link",
+            url: serviceUrl,
+          }]
+        }
+      }
+    }
+  };
 
   callSendAPI(messageData);
 }
@@ -586,7 +724,7 @@ function sendGenericMessage(recipientId) {
           elements: [{
             title: "rift",
             subtitle: "Next-generation virtual reality",
-            item_url: "https://www.oculus.com/en-us/rift/",               
+            item_url: "https://www.oculus.com/en-us/rift/",
             image_url: SERVER_URL + "/assets/rift.png",
             buttons: [{
               type: "web_url",
@@ -600,7 +738,7 @@ function sendGenericMessage(recipientId) {
           }, {
             title: "touch",
             subtitle: "Your Hands, Now in VR",
-            item_url: "https://www.oculus.com/en-us/touch/",               
+            item_url: "https://www.oculus.com/en-us/touch/",
             image_url: SERVER_URL + "/assets/touch.png",
             buttons: [{
               type: "web_url",
@@ -615,7 +753,7 @@ function sendGenericMessage(recipientId) {
         }
       }
     }
-  };  
+  };
 
   callSendAPI(messageData);
 }
@@ -626,13 +764,13 @@ function sendGenericMessage(recipientId) {
  */
 function sendReceiptMessage(recipientId) {
   // Generate a random receipt ID as the API requires a unique ID
-  var receiptId = "order" + Math.floor(Math.random()*1000);
+  var receiptId = "order" + Math.floor(Math.random() * 1000);
 
   var messageData = {
     recipient: {
       id: recipientId
     },
-    message:{
+    message: {
       attachment: {
         type: "template",
         payload: {
@@ -640,8 +778,8 @@ function sendReceiptMessage(recipientId) {
           recipient_name: "Peter Chang",
           order_number: receiptId,
           currency: "USD",
-          payment_method: "Visa 1234",        
-          timestamp: "1428444852", 
+          payment_method: "Visa 1234",
+          timestamp: "1428444852",
           elements: [{
             title: "Oculus Rift",
             subtitle: "Includes: headset, sensor, remote",
@@ -690,43 +828,43 @@ function sendReceiptMessage(recipientId) {
 
 function sendAirlineMessage(recipientId) {
   // Generate a random receipt ID as the API requires a unique ID
-  var receiptId = "order" + Math.floor(Math.random()*1000);
+  var receiptId = "order" + Math.floor(Math.random() * 1000);
 
   var messageData = {
     recipient: {
       id: recipientId
     },
-    message:{
+    message: {
       text: "Hello abraham, run away now to save your life...",
       attachment: {
         type: "template",
         "payload": {
-        "template_type": "airline_update",
-        "intro_message": "Your flight is going to explode",
-        "update_type": "delay",
-        "locale": "en_IN",
-        "pnr_number": "CF23G2",
-        "update_flight_info": {
-          "flight_number": "KL123",
-          "departure_airport": {
-            "airport_code": "CHN",
-            "city": "Chennai",
-            "terminal": "T4",
-            "gate": "G8"
-          },
-          "arrival_airport": {
-            "airport_code": "LVS",
-            "city": "Las Vegas",
-            "terminal": "T4",
-            "gate": "G8"
-          },
-          "flight_schedule": {
-            "boarding_time": "2015-12-26T10:30",
-            "departure_time": "2015-12-26T11:30",
-            "arrival_time": "2015-12-27T07:30"
+          "template_type": "airline_update",
+          "intro_message": "Your flight is going to explode",
+          "update_type": "delay",
+          "locale": "en_IN",
+          "pnr_number": "CF23G2",
+          "update_flight_info": {
+            "flight_number": "KL123",
+            "departure_airport": {
+              "airport_code": "CHN",
+              "city": "Chennai",
+              "terminal": "T4",
+              "gate": "G8"
+            },
+            "arrival_airport": {
+              "airport_code": "LVS",
+              "city": "Las Vegas",
+              "terminal": "T4",
+              "gate": "G8"
+            },
+            "flight_schedule": {
+              "boarding_time": "2015-12-26T10:30",
+              "departure_time": "2015-12-26T11:30",
+              "arrival_time": "2015-12-27T07:30"
+            }
           }
         }
-      }
       }
     }
   };
@@ -746,23 +884,19 @@ function sendQuickReply(recipientId) {
     },
     message: {
       text: "What's your favorite movie genre?",
-      quick_replies: [
-        {
-          "content_type":"text",
-          "title":"Action",
-          "payload":"DEVELOPER_DEFINED_PAYLOAD_FOR_PICKING_ACTION"
-        },
-        {
-          "content_type":"text",
-          "title":"Comedy",
-          "payload":"DEVELOPER_DEFINED_PAYLOAD_FOR_PICKING_COMEDY"
-        },
-        {
-          "content_type":"text",
-          "title":"Drama",
-          "payload":"DEVELOPER_DEFINED_PAYLOAD_FOR_PICKING_DRAMA"
-        }
-      ]
+      quick_replies: [{
+        "content_type": "text",
+        "title": "Action",
+        "payload": "DEVELOPER_DEFINED_PAYLOAD_FOR_PICKING_ACTION"
+      }, {
+        "content_type": "text",
+        "title": "Comedy",
+        "payload": "DEVELOPER_DEFINED_PAYLOAD_FOR_PICKING_COMEDY"
+      }, {
+        "content_type": "text",
+        "title": "Drama",
+        "payload": "DEVELOPER_DEFINED_PAYLOAD_FOR_PICKING_DRAMA"
+      }]
     }
   };
 
@@ -835,14 +969,14 @@ function sendAccountLinking(recipientId) {
         payload: {
           template_type: "button",
           text: "Welcome. Link your account.",
-          buttons:[{
+          buttons: [{
             type: "account_link",
             url: SERVER_URL + "/authorize"
           }]
         }
       }
     }
-  };  
+  };
 
   callSendAPI(messageData);
 }
@@ -855,26 +989,28 @@ function sendAccountLinking(recipientId) {
 function callSendAPI(messageData) {
   request({
     uri: 'https://graph.facebook.com/v2.6/me/messages',
-    qs: { access_token: PAGE_ACCESS_TOKEN },
+    qs: {
+      access_token: PAGE_ACCESS_TOKEN
+    },
     method: 'POST',
     json: messageData
 
-  }, function (error, response, body) {
+  }, function(error, response, body) {
     if (!error && response.statusCode == 200) {
       var recipientId = body.recipient_id;
       var messageId = body.message_id;
 
       if (messageId) {
-        console.log("Successfully sent message with id %s to recipient %s", 
+        console.log("Successfully sent message with id %s to recipient %s",
           messageId, recipientId);
       } else {
-      console.log("Successfully called Send API for recipient %s", 
-        recipientId);
+        console.log("Successfully called Send API for recipient %s",
+          recipientId);
       }
     } else {
       console.error("Failed calling Send API", response.statusCode, response.statusMessage, body.error);
     }
-  });  
+  });
 }
 
 // Start server
@@ -885,4 +1021,3 @@ app.listen(app.get('port'), function() {
 });
 
 module.exports = app;
-

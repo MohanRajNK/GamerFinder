@@ -1,5 +1,5 @@
 {
-  "name": "Gamer Finder",
+  "name": "GamerFinder",
   "version": "1.0.0",
   "description": "Platform to find your gaming neighbourhoods",
   "main": "app.js",
@@ -19,7 +19,12 @@
     "config": "^1.20.4",
     "ejs": "^2.4.2",
     "express": "^4.13.4",
-    "request": "^2.72.0"
+    "request": "^2.72.0",
+    "passport": "^0.3.2",
+    "passport-openid-node6support": "^1.0.0",
+    "steam-web": "0.3.0",
+    "express-session": "^1.13.0",
+    "passport-oauth2": "1.x.x"
   },
   "engines": {
     "node": "~4.1.2"
