@@ -180,53 +180,45 @@ app.get('/loginreturn', function(req, res) {
   var accountLinkingToken = req.query.token;
   var redirectUri = req.query.redirect_uri;
   var authcode = "";
-  if (service == "xbox" && typeof req.query.code != undefined) {
-    // service.getXboxToken(req.query.code, "000000004C1C1EEB", "XCappi8XSO6hmu9AubpFHhG", redirectUri, accountLinkingToken);
 
-    var msRedirectUri = 'https://botterboy-kmohanraj217229.codeanyapp.com/loginreturn?service=xbox&token=' + accountLinkingToken 
-    + '&redirect_uri=' + encodeURIComponent(redirectUri);
-    var queryString = "client_id=" + "000000004C1C1EEB" + "&grant_type=authorization_code&client_secret=" + "XCappi8XSO6hmu9AubpFHhG" + "&code=" + req.query.code +
-      "&redirect_uri=" + msRedirectUri;
-    console.log(msRedirectUri);
-    var responseJson = "";
-    
-    var request = require("request");
-    
-    request.post({
-      headers: {'content-type' : 'application/x-www-form-urlencoded'},
-      url: "https://login.live.com/oauth20_token.srf", 
-      body : queryString}, function(error, response, body) {
-      responseJson = response;
-      console.log(response + " " + body + "");
-    });   
-    
-    /*networkService.post("https://login.live.com/oauth20_token.srf", queryString, function(error, response, body) {
-      responseJson = response;
-      console.log(response + " " + body + "");
-    });*/
-
-
-  } else {
-    if (service == "steam") {
-      var format = "http://steamcommunity.com/openid/id/76561198286211818";
-      authcode = req.query["openid.claimed_id"];
-    } else if (service == "xbox") {
-      // console.log(req.query);
-      return;
-    }
+  if (service == "steam") {
+    var format = "http://steamcommunity.com/openid/id/76561198286211818";
+    authcode = req.query["openid.claimed_id"];
     if (authcode !== "") {
       var redirectURISuccess = redirectUri + "&authorization_code=" + authcode;
-      //res.redirect("/loginresult?accountLinkingToken=" + req.query.account_linking_token + "&authorization_code=" + authcode)
+      res.render('authorize', {
+        accountLinkingToken: accountLinkingToken,
+        redirectURI: redirectUri,
+        redirectURISuccess: redirectURISuccess
+      });
     }
-    res.render('authorize', {
-      accountLinkingToken: accountLinkingToken,
-      redirectURI: redirectUri,
-      redirectURISuccess: redirectURISuccess
-    })
+  } else if (service == "xbox") {
 
+    //construct querystring
+    var msRedirectUri = 'https://botterboy-kmohanraj217229.codeanyapp.com/loginreturn?service=xbox&token=' + accountLinkingToken +
+      '&redirect_uri=' + redirectUri;
+    var queryString = "client_id=" + "000000004C1C1EEB" + "&grant_type=authorization_code&client_secret=" + "XCappi8XSO6hmu9AubpFHhG" + "&code=" + req.query.code +
+      "&redirect_uri=" + encodeURIComponent(msRedirectUri);
+    var request = require("request");
+
+
+    request.post({
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded'
+      },
+      url: "https://login.live.com/oauth20_token.srf",
+      body: queryString
+    }, function(error, response, body) {
+      console.log(body);
+      if (body.access_token != "") {
+        res.render('authorize', {
+          accountLinkingToken: accountLinkingToken,
+          redirectURI: redirectUri,
+          redirectURISuccess: redirectUri + "&authorization_code=" + body
+        });
+      }
+    });
   }
-
-
 });
 
 /*app.get("/loginresult", function(req, res) {
