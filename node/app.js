@@ -20,9 +20,10 @@ const
   appservice = require('./services/app-service');
 
 var service = appservice.service;
+var psnService = require('./gaming/psn');
 var passport = require('passport');
-var network = require('./services/network-service');
-var networkService = network.service;
+var Db = require('mongodb').Db,
+  MongoClient = require('mongodb').MongoClient
 
 var app = express();
 app.set('port', process.env.PORT || 3000);
@@ -32,7 +33,7 @@ app.use(bodyParser.json({
 }));
 app.use(express.static('public'));
 app.use(passport.initialize());
-app.use(passport.session());
+
 
 /*
  * Be sure to setup your config values before running this code. You can 
@@ -65,6 +66,44 @@ if (!(APP_SECRET && VALIDATION_TOKEN && PAGE_ACCESS_TOKEN && SERVER_URL)) {
   console.error("Missing config values");
   process.exit(1);
 }
+
+
+/*
+ * Psn Initialize
+ *
+ */
+psnService.init({ // Our PSN Module, we have to start it once. - irkinsander
+  debug: true // Let's set it true, it's still in early development. So, report everything that goes wrong please.
+    ,
+  email: "kmohanraj@outlook.com" // A valid PSN/SCE account (can be new one) // TODO: Using the user's credentials to do this.
+    ,
+  password: "MoraPwd@93112" // Account's password, du'h
+    ,
+  npLanguage: "en" // The language the trophy's name and description will shown as
+    ,
+  region: "us" // The server region that will push data
+});
+
+
+/*
+ *
+ *Mongodb connection
+ */
+MongoClient.connect("mongodb://localhost:27017/GamersFinder", function(err, db) {
+  if (!err) {
+    console.log("We are connected");
+    app.locals.db = db;
+    db.collection('test', function(err, collection) {
+      if (!err) {
+        console.log("success");
+      } else {
+        console.log(err);
+      }
+    });
+  } else {
+    console.log(err);
+  }
+});
 
 /*
  * Use your own validation token. Check that the token used in the Webhook 
@@ -134,7 +173,7 @@ app.post('/webhook', function(req, res) {
  * (sendAccountLinking) is pointed to this URL. 
  * 
  */
-app.get('/authorize', function(req, res) {
+/*app.get('/authorize', function(req, res) {
   var accountLinkingToken = req.query.account_linking_token;
   var redirectURI = req.query.redirect_uri;
   if (accountLinkingToken == "steam") {
@@ -161,7 +200,7 @@ app.get('/xboxAuthenticate', function(req, res) {
   var redirectUri = req.query.redirect_uri;
   var authcode = req.query.code;
 
-});
+});*/
 
 /*
  * Login process
@@ -218,6 +257,8 @@ app.get('/loginreturn', function(req, res) {
         });
       }
     });
+  } else if (service == "psn") {
+    console.log(req);
   }
 });
 
@@ -337,17 +378,27 @@ function receivedMessage(event) {
     return;
   }
 
+  // if (messageText.includes("nearby gamers")) {
+  // askLocation(senderID);
+  //} else 
   if (messageText) {
 
     // If we receive a text message, check to see if it matches any special
     // keywords and send back the corresponding example. Otherwise, just echo
     // the text we received.
+    analyzeLanguage(senderID,messageText);
     switch (messageText) {
       case 'register':
         sendLoginMessage(senderID, "steam");
         break;
       case 'register xbox':
         sendLoginMessage(senderID, "xbox");
+        break;
+      case 'register psn':
+        console.log("psnService");
+        psnService.getProfile('abrahamrkj', function(err, sd) {
+          console.log(err + " " + sd);
+        });
         break;
       case 'image':
         sendImageMessage(senderID);
@@ -404,6 +455,8 @@ function receivedMessage(event) {
       default:
         //sendAirlineMessage(senderID);
         sendTextMessage(senderID, messageText);
+        break;
+        
     }
   } else if (messageAttachments) {
     sendTextMessage(senderID, "Message with attachment received");
@@ -973,6 +1026,27 @@ function sendAccountLinking(recipientId) {
   callSendAPI(messageData);
 }
 
+
+/*
+ * Ask Location
+ *
+ */
+function askLocation(recipientId) {
+  var messageData = {
+    recipient: {
+      id: recipientId
+    },
+    message: {
+      text: "Please share your location:",
+      quick_replies: [{
+        "content_type": "location",
+      }]
+    }
+  }
+  callSendAPI(messageData);
+}
+
+
 /*
  * Call the Send API. The message data goes in the body. If successful, we'll 
  * get the message id in a response 
@@ -1005,11 +1079,82 @@ function callSendAPI(messageData) {
   });
 }
 
+/*
+ * call thread seetings api
+ *
+ */
+function callSettingsAPI(data) {
+  request({
+    uri: 'https://graph.facebook.com/v2.6/me/thread_settings',
+    qs: {
+      access_token: PAGE_ACCESS_TOKEN
+    },
+    method: 'POST',
+    json: data
+
+  }, function(error, response, body) {
+    if (!error && response.statusCode == 200) {
+      console.log("Greeting set successfully!");
+    } else {
+      console.error("Failed calling Thread Reference API", response.statusCode, response.statusMessage, body.error);
+    }
+  });
+}
+
+
+/*
+ * Set Greeting text
+ */
+function setGreetingText() {
+  var greetingData = {
+    setting_type: "greeting",
+    greeting: {
+      text: "Hi {{user_first_name}}, welcome!"
+    }
+  };
+  callSettingsAPI(greetingData);
+}
+
+
+/*
+ *
+ */
+function analyzeLanguage(id, content) {
+
+  var data = {
+    "document": {
+      "type": "PLAIN_TEXT",
+      "content": content
+    },
+    "encodingType" : "UTF8"
+  };
+
+  request({
+    uri: 'https://language.googleapis.com/v1beta1/documents:analyzeEntities',
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'Authorization': 'Bearer ya29.El_oA-f7L-mWQfnAZiViZDrdz54-VP0V1_KWafCLzQ3GCNOnTrZE4nt-PjMxwFgMi2zF-wcDYy6ui64yUgt2CO-mxslzzxuMuOylDpBCU1q-NceS98mBxKEVSIV74PDNZQ'
+    },
+    body : data,
+    json: true
+
+  }, function(error, response, body) {
+    if (!error) {
+      sendTextMessage(id, JSON.stringify(response.body.entities));
+      console.log("$$$$$$$$$$$$$$$$$$$$$$$$$#heeooooo" + " " + JSON.stringify(response) + body);
+    } else {
+      console.error("####################", error);
+    }
+  });
+}
+
 // Start server
 // Webhooks must be available via SSL with a certificate signed by a valid 
 // certificate authority.
 app.listen(app.get('port'), function() {
   console.log('Node app is running on port', app.get('port'));
+  setGreetingText();
 });
 
 module.exports = app;
